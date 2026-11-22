@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sanchal Kavach | Zero-Knowledge AES-256 Secret Sharing</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: #131a2a;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #f97316;
+            --accent2: #10b981;
+            --border: #1e293b;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); line-height: 1.6; padding: 20px; }
+        .container { max-width: 680px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 30px; }
+        .logo { font-size: 1.3rem; font-weight: 700; text-decoration: none; color: var(--text); }
+        .logo span { color: var(--accent); }
+        .badge { background: rgba(16, 185, 129, 0.15); color: var(--accent2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; }
+        p.sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 22px; }
+        label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+        textarea, input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 8px; font-size: 0.95rem; margin-bottom: 16px; }
+        textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+        button { width: 100%; background: var(--accent); color: #fff; border: none; padding: 13px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { opacity: 0.92; }
+        .btn-green { background: var(--accent2); color: #052e16; }
+        .output-box { display: none; margin-top: 20px; padding: 16px; background: var(--bg); border: 1px dashed var(--accent2); border-radius: 8px; }
+        .output-box input { margin-bottom: 10px; font-size: 0.85rem; color: var(--accent2); }
+        .info { margin-top: 24px; font-size: 0.85rem; color: var(--muted); text-align: center; }
+        .info a { color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <a href="index.html" class="logo">Sanchal<span>Kavach</span></a>
+        <span class="badge">🔒 100% Client-Side AES-256</span>
+    </header>
+
+    <!-- Create Secret View -->
+    <div class="card" id="create-view">
+        <h1>Encrypt & Share Confidential Notes</h1>
+        <p class="sub">Zero-knowledge encryption. Your secret is locked inside your browser and never touches any server.</p>
+
+        <label for="secret-text">Confidential Message / Password / Key</label>
+        <textarea id="secret-text" rows="5" placeholder="Enter sensitive text, password, or private note here..."></textarea>
+
+        <label for="passphrase">Set a Secret Passphrase (Required to Unlock)</label>
+        <input type="password" id="passphrase" placeholder="Enter a strong passphrase...">
+
+        <button onclick="encryptSecret()">Generate Encrypted Kavach Link</button>
+
+        <div class="output-box" id="result-box">
+            <label style="color: var(--accent2);">Your Encrypted Link is Ready (Share via WhatsApp/Email):</label>
+            <input type="text" id="share-link" readonly>
+            <button class="btn-green" onclick="copyLink()">Copy Link</button>
+        </div>
+    </div>
+
+    <!-- Decrypt Secret View -->
+    <div class="card" id="decrypt-view" style="display: none;">
+        <h1>Unlock Sanchal Kavach Note</h1>
+        <p class="sub">Someone sent you an end-to-end encrypted secret. Enter the passphrase to unlock it.</p>
+
+        <label for="unlock-passphrase">Enter Passphrase</label>
+        <input type="password" id="unlock-passphrase" placeholder="Enter the passphrase shared with you...">
+
+        <button onclick="decryptSecret()">Decrypt Message</button>
+
+        <div class="output-box" id="decrypted-box">
+            <label style="color: var(--accent2);">Decrypted Content:</label>
+            <textarea id="decrypted-text" rows="5" readonly></textarea>
+            <button class="btn-green" onclick="window.location.href='kavach.html'">Create New Secret</button>
+        </div>
+    </div>
+
+    <div class="info">
+        An Open-Source Privacy Initiative by <a href="index.html">Sanchal Open Tech Foundation</a>
+    </div>
+</div>
+
+<script>
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+
+    async function getKey(passphrase, salt) {
+        const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"]);
+        return crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+            keyMaterial,
+            { name: "AES-GCM", length: 256 },
+            false,
+            ["encrypt", "decrypt"]
+        );
+    }
+
+    function bufToBase64(buf) {
+        return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    }
+
+    function base64ToBuf(b64) {
+        return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    }
+
+    async function encryptSecret() {
+        const text = document.getElementById("secret-text").value.trim();
+        const pass = document.getElementById("passphrase").value;
+        if (!text || !pass) return alert("Please enter both a message and a passphrase.");
+
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await getKey(pass, salt);
+        const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(text));
+
+        const payload = JSON.stringify({
+            s: bufToBase64(salt),
+            i: bufToBase64(iv),
+            c: bufToBase64(encrypted)
+        });
+
+        const encodedPayload = encodeURIComponent(btoa(payload));
+        const url = `${window.location.origin}${window.location.pathname}#${encodedPayload}`;
+        document.getElementById("share-link").value = url;
+        document.getElementById("result-box").style.display = "block";
+    }
+
+    async function decryptSecret() {
+        const pass = document.getElementById("unlock-passphrase").value;
+        if (!pass) return alert("Please enter the passphrase.");
+
+        try {
+            const hash = decodeURIComponent(window.location.hash.substring(1));
+            const payload = JSON.parse(atob(hash));
+            const salt = base64ToBuf(payload.s);
+            const iv = base64ToBuf(payload.i);
+            const ciphertext = base64ToBuf(payload.c);
+
+            const key = await getKey(pass, salt);
+            const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ciphertext);
+
+            document.getElementById("decrypted-text").value = dec.decode(decrypted);
+            document.getElementById("decrypted-box").style.display = "block";
+        } catch (e) {
+            alert("Incorrect passphrase or corrupted link!");
+        }
+    }
+
+    function copyLink() {
+        const linkInput = document.getElementById("share-link");
+        linkInput.select();
+        navigator.clipboard.writeText(linkInput.value);
+        alert("Encrypted Kavach link copied!");
+    }
+
+    if (window.location.hash.length > 1) {
+        document.getElementById("create-view").style.display = "none";
+        document.getElementById("decrypt-view").style.display = "block";
+    }
+</script>
+
+</body>
+</html>
